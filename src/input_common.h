@@ -77,6 +77,7 @@ enum class readline_cmd_t {
     cancel,
     undo,
     redo,
+    read_count,
     repeat_jump,
     // NOTE: This one has to be last.
     reverse_repeat_jump

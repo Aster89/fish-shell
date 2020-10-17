@@ -574,6 +574,9 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     wcstring in_flight_highlight_request;
     wcstring in_flight_autosuggest_request;
 
+    /// How many times to execute the next editing command
+    unsigned count{0};
+
     bool is_navigating_pager_contents() const { return this->pager.is_navigating_contents(); }
 
     /// The line that is currently being edited. Typically the command line, but may be the search
@@ -3602,7 +3605,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
                                  ? jump_precision_t::to
                                  : jump_precision_t::till;
             editable_line_t *el = active_edit_line();
-            wchar_t target = inputter.function_pop_arg();
+            wchar_t target = inputter.function_pop_arg().unwrap_character();
             bool success = jump(direction, precision, el, target);
 
             inputter.function_set_status(success);
@@ -3660,6 +3663,15 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
                 update_buff_pos(el);
             } else {
                 flash();
+            }
+            break;
+        }
+        case rl::read_count: {
+            unsigned new_count = inputter.function_pop_arg().unwrap_number();
+            if (count == 0) {
+                count = new_count;
+            } else {
+                count *= new_count;
             }
             break;
         }

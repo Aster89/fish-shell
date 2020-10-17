@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream> // [BTV] remove this
 
 #include "common.h"
 #include "env.h"
@@ -49,9 +50,12 @@ struct input_mapping_t {
     wcstring mode;
     /// New mode that should be switched to after command evaluation.
     wcstring sets_mode;
+    /// True if the character sequence should be pushed back on the event queue;
+    /// false otherwise.
+    bool nonconsuming;
 
-    input_mapping_t(wcstring s, wcstring_list_t c, wcstring m, wcstring sm)
-        : seq(std::move(s)), commands(std::move(c)), mode(std::move(m)), sets_mode(std::move(sm)) {
+    input_mapping_t(wcstring s, wcstring_list_t c, wcstring m, wcstring sm, bool nc)
+        : seq(std::move(s)), commands(std::move(c)), mode(std::move(m)), sets_mode(std::move(sm)), nonconsuming(nc) {
         static unsigned int s_last_input_map_spec_order = 0;
         specification_order = ++s_last_input_map_spec_order;
     }
@@ -154,6 +158,7 @@ static const input_function_metadata_t input_function_metadata[] = {
     {readline_cmd_t::cancel, L"cancel"},
     {readline_cmd_t::undo, L"undo"},
     {readline_cmd_t::redo, L"redo"},
+    {readline_cmd_t::read_count, L"read-count"},
 };
 
 static_assert(sizeof(input_function_metadata) / sizeof(input_function_metadata[0]) ==
@@ -201,15 +206,17 @@ static void input_set_bind_mode(parser_t &parser, const wcstring &bm) {
 }
 
 /// Returns the arity of a given input function.
-static int input_function_arity(readline_cmd_t function) {
+static std::vector<function_param_t> input_function_params(readline_cmd_t function) {
     switch (function) {
         case readline_cmd_t::forward_jump:
         case readline_cmd_t::backward_jump:
         case readline_cmd_t::forward_jump_till:
         case readline_cmd_t::backward_jump_till:
-            return 1;
+            return std::vector<function_param_t> { function_param_t::character };
+        case readline_cmd_t::read_count:
+            return std::vector<function_param_t> { function_param_t::number };
         default:
-            return 0;
+            return std::vector<function_param_t> { };
     }
 }
 
@@ -232,7 +239,7 @@ static void input_mapping_insert_sorted(mapping_list_t &ml, input_mapping_t new_
 /// Adds an input mapping.
 void input_mapping_set_t::add(wcstring sequence, const wchar_t *const *commands,
                               size_t commands_len, const wchar_t *mode, const wchar_t *sets_mode,
-                              bool user) {
+                              bool user, bool nonconsuming) {
     assert(commands && mode && sets_mode && "Null parameter");
 
     // Clear cached mappings.
@@ -253,13 +260,13 @@ void input_mapping_set_t::add(wcstring sequence, const wchar_t *const *commands,
 
     // Add a new mapping, using the next order.
     input_mapping_t new_mapping =
-        input_mapping_t(std::move(sequence), commands_vector, mode, sets_mode);
+        input_mapping_t(std::move(sequence), commands_vector, mode, sets_mode, nonconsuming);
     input_mapping_insert_sorted(ml, std::move(new_mapping));
 }
 
 void input_mapping_set_t::add(wcstring sequence, const wchar_t *command, const wchar_t *mode,
-                              const wchar_t *sets_mode, bool user) {
-    input_mapping_set_t::add(std::move(sequence), &command, 1, mode, sets_mode, user);
+                              const wchar_t *sets_mode, bool user, bool nonconsuming) {
+    input_mapping_set_t::add(std::move(sequence), &command, 1, mode, sets_mode, user, nonconsuming);
 }
 
 /// Handle interruptions to key reading by reaping finished jobs and propagating the interrupt to
@@ -320,9 +327,19 @@ void init_input() {
 
 inputter_t::inputter_t(parser_t &parser, int in) : event_queue_(in), parser_(parser.shared()) {}
 
-void inputter_t::function_push_arg(wchar_t arg) { input_function_args_.push_back(arg); }
+wchar_t function_arg_t::unwrap_character() const {
+    assert(type_ == function_param_t::character && "expected a character");
+    return arg_.character_;
+}
 
-wchar_t inputter_t::function_pop_arg() {
+unsigned function_arg_t::unwrap_number() const {
+    assert(type_ == function_param_t::number && "expected a number");
+    return arg_.number_;
+}
+
+void inputter_t::function_push_arg(function_arg_t arg) { input_function_args_.push_back(arg); }
+
+function_arg_t inputter_t::function_pop_arg() {
     assert(!input_function_args_.empty() && "function_pop_arg underflow");
     auto result = input_function_args_.back();
     input_function_args_.pop_back();
@@ -330,19 +347,45 @@ wchar_t inputter_t::function_pop_arg() {
 }
 
 void inputter_t::function_push_args(readline_cmd_t code) {
-    int arity = input_function_arity(code);
+    auto params = input_function_params(code);
     std::vector<char_event_t> skipped;
 
-    for (int i = 0; i < arity; i++) {
+    for (auto param: params) {
         // Skip and queue up any function codes. See issue #2357.
-        wchar_t arg{};
+        function_arg_t arg{.type_ = function_param_t::number, .arg_ = {.number_ = 0}};
         for (;;) {
             auto evt = event_queue_.readch();
+            bool handled = false;
             if (evt.is_char()) {
-                arg = evt.get_char();
-                break;
+                bool done = false;
+                wchar_t value = evt.get_char();
+                switch (param) {
+                case function_param_t::character:
+                    arg = {.type_ = function_param_t::character, .arg_ = {.character_ = value}};
+                    done = true;
+                    handled = true;
+                    break;
+                case function_param_t::number:
+                    // [BTV] check max
+                    if (L'0' <= value && value <= L'9') {
+                        unsigned numeric = value - L'0';
+                        arg.arg_.number_ *= 10;
+                        arg.arg_.number_ += numeric;
+                    }
+                    else {
+                        event_queue_.push_front(evt);
+                        done = true;
+                    }
+                    handled = true;
+                    break;
+                }
+                if (done) {
+                    break;
+                }
             }
-            skipped.push_back(evt);
+            if (!handled) {
+                skipped.push_back(evt);
+            }
         }
         function_push_arg(arg);
     }
@@ -429,6 +472,11 @@ bool inputter_t::mapping_is_match(const input_mapping_t &m) {
         // If we just read an escape, we need to add a timeout for the next char,
         // to distinguish between the actual escape key and an "alt"-modifier.
         timed = (str[i] == L'\x1B');
+    }
+    if (m.nonconsuming) {
+        for (size_t i = str.size(); i > 0; --i) {
+            event_queue_.push_front(str[i - 1]);
+        }
     }
 
     return true;

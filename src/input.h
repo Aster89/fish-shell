@@ -21,8 +21,45 @@ wcstring describe_char(wint_t c);
 /// initializations for our input subsystem.
 void init_input();
 
+// function_arg_t is logically an std::variant, but we are restricted to C++11.
+enum class function_param_t {
+    character,
+    number
+};
+
+union function_arg_inner_t {
+    wchar_t character_;
+    unsigned number_;
+};
+
+struct function_arg_t {
+    function_param_t type_;
+    function_arg_inner_t arg_;
+
+    wchar_t unwrap_character() const;
+    unsigned unwrap_number() const;
+};
+
 struct input_mapping_t;
 class inputter_t {
+//<<<<<<< HEAD
+//=======
+    input_event_queue_t event_queue_{};
+    std::vector<function_arg_t> input_function_args_{};
+    bool function_status_{false};
+
+    // We need a parser to evaluate bindings.
+    const std::shared_ptr<parser_t> parser_;
+
+    void function_push_arg(function_arg_t arg);
+    void function_push_args(readline_cmd_t code);
+    void mapping_execute(const input_mapping_t &m, bool allow_commands);
+    void mapping_execute_matching_or_generic(bool allow_commands);
+    bool mapping_is_match(const input_mapping_t &m);
+    maybe_t<input_mapping_t> find_mapping();
+    char_event_t read_characters_no_readline();
+
+//>>>>>>> d9be87ff9 ([btv] add read-count function; add nonconsuming param)
    public:
     /// Construct from a parser, and the fd from which to read.
     explicit inputter_t(parser_t &parser, int in = STDIN_FILENO);
@@ -53,23 +90,12 @@ class inputter_t {
     void function_set_status(bool status) { function_status_ = status; }
 
     /// Pop an argument from the function argument stack.
-    wchar_t function_pop_arg();
+    function_arg_t function_pop_arg();
 
    private:
-    input_event_queue_t event_queue_;
-    std::vector<wchar_t> input_function_args_{};
-    bool function_status_{false};
-
-    // We need a parser to evaluate bindings.
-    const std::shared_ptr<parser_t> parser_;
-
     void function_push_arg(wchar_t arg);
-    void function_push_args(readline_cmd_t code);
     void mapping_execute(const input_mapping_t &m, const command_handler_t &command_handler);
     void mapping_execute_matching_or_generic(const command_handler_t &command_handler);
-    bool mapping_is_match(const input_mapping_t &m);
-    maybe_t<input_mapping_t> find_mapping();
-    char_event_t read_characters_no_readline();
 };
 
 struct input_mapping_name_t {
@@ -113,11 +139,11 @@ class input_mapping_set_t {
     /// \param sequence the sequence to bind
     /// \param command an input function that will be run whenever the key sequence occurs
     void add(wcstring sequence, const wchar_t *command, const wchar_t *mode = DEFAULT_BIND_MODE,
-             const wchar_t *sets_mode = DEFAULT_BIND_MODE, bool user = true);
+             const wchar_t *sets_mode = DEFAULT_BIND_MODE, bool user = true, bool nonconsuming = false);
 
     void add(wcstring sequence, const wchar_t *const *commands, size_t commands_len,
              const wchar_t *mode = DEFAULT_BIND_MODE, const wchar_t *sets_mode = DEFAULT_BIND_MODE,
-             bool user = true);
+             bool user = true, bool nonconsuming = false);
 
     /// \return a snapshot of the list of input mappings.
     std::shared_ptr<const mapping_list_t> all_mappings();

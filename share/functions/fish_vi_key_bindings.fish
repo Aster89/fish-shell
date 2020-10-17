@@ -311,6 +311,19 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -M default \# __fish_toggle_comment_commandline
     bind -s --preset -M visual \# __fish_toggle_comment_commandline
     bind -s --preset -M replace \# __fish_toggle_comment_commandline
+    
+    bind -s --preset -M replace \# __fish_toggle_comment_commandline
+
+    bind -s --preset -M default -n 1 read-count
+    bind -s --preset -M default -n 2 read-count
+    bind -s --preset -M default -n 3 read-count
+    bind -s --preset -M default -n 4 read-count
+    bind -s --preset -M default -n 5 read-count
+    bind -s --preset -M default -n 6 read-count
+    bind -s --preset -M default -n 7 read-count
+    bind -s --preset -M default -n 8 read-count
+    bind -s --preset -M default -n 9 read-count
+    bind -s --preset -M default z read-count
 
     # Set the cursor shape
     # After executing once, this will have defined functions listening for the variable.

@@ -30,6 +30,7 @@ struct bind_cmd_opts_t {
     bool user = false;
     bool have_preset = false;
     bool preset = false;
+    bool nonconsuming = false;
     int mode = BIND_INSERT;
     const wchar_t *bind_mode = DEFAULT_BIND_MODE;
     const wchar_t *sets_bind_mode = L"";
@@ -174,17 +175,17 @@ bool builtin_bind_t::get_terminfo_sequence(const wcstring &seq, wcstring *out_se
 /// Add specified key binding.
 bool builtin_bind_t::add(const wcstring &seq, const wchar_t *const *cmds, size_t cmds_len,
                          const wchar_t *mode, const wchar_t *sets_mode, bool terminfo, bool user,
-                         io_streams_t &streams) {
+                         bool nonconsuming, io_streams_t &streams) {
     if (terminfo) {
         wcstring seq2;
         if (get_terminfo_sequence(seq, &seq2, streams)) {
-            input_mappings_->add(seq2, cmds, cmds_len, mode, sets_mode, user);
+            input_mappings_->add(seq2, cmds, cmds_len, mode, sets_mode, user, nonconsuming);
         } else {
             return true;
         }
 
     } else {
-        input_mappings_->add(seq, cmds, cmds_len, mode, sets_mode, user);
+        input_mappings_->add(seq, cmds, cmds_len, mode, sets_mode, user, nonconsuming);
     }
 
     return false;
@@ -284,7 +285,7 @@ bool builtin_bind_t::insert(int optind, int argc, wchar_t **argv, io_streams_t &
     } else {
         // Actually insert!
         if (add(argv[optind], argv + (optind + 1), argc - (optind + 1), opts->bind_mode,
-                opts->sets_bind_mode, opts->use_terminfo, opts->user, streams)) {
+                opts->sets_bind_mode, opts->use_terminfo, opts->user, opts->nonconsuming, streams)) {
             return true;
         }
     }
@@ -316,7 +317,7 @@ void builtin_bind_t::list_modes(io_streams_t &streams) {
 static int parse_cmd_opts(bind_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncss method)
                           int argc, wchar_t **argv, parser_t &parser, io_streams_t &streams) {
     wchar_t *cmd = argv[0];
-    static const wchar_t *const short_options = L":aehkKfM:Lm:s";
+    static const wchar_t *const short_options = L":aehkKfM:Lm:sn";
     static const struct woption long_options[] = {{L"all", no_argument, nullptr, 'a'},
                                                   {L"erase", no_argument, nullptr, 'e'},
                                                   {L"function-names", no_argument, nullptr, 'f'},
@@ -329,6 +330,7 @@ static int parse_cmd_opts(bind_cmd_opts_t &opts, int *optind,  //!OCLINT(high nc
                                                   {L"sets-mode", required_argument, nullptr, 'm'},
                                                   {L"silent", no_argument, nullptr, 's'},
                                                   {L"user", no_argument, nullptr, 'u'},
+                                                  {L"nonconsuming", no_argument, nullptr, 'n'},
                                                   {nullptr, 0, nullptr, 0}};
 
     int opt;
@@ -392,6 +394,10 @@ static int parse_cmd_opts(bind_cmd_opts_t &opts, int *optind,  //!OCLINT(high nc
             case L'u': {
                 opts.have_user = true;
                 opts.user = true;
+                break;
+            }
+            case L'n': {
+                opts.nonconsuming = true;
                 break;
             }
             case ':': {
