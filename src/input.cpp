@@ -159,6 +159,12 @@ static const input_function_metadata_t input_function_metadata[] = {
     {readline_cmd_t::undo, L"undo"},
     {readline_cmd_t::redo, L"redo"},
     {readline_cmd_t::read_count, L"read-count"},
+    {readline_cmd_t::clear_operator, L"clear_operator"},
+    {readline_cmd_t::set_operator_copy, L"set-operator-copy"},
+    {readline_cmd_t::set_operator_kill, L"set-operator-kill"},
+    {readline_cmd_t::set_operator_change, L"set-operator-change"},
+    {readline_cmd_t::set_operator_downcase, L"set-operator-downcase"},
+    {readline_cmd_t::set_operator_upcase, L"set-operator-upcase"},
 };
 
 static_assert(sizeof(input_function_metadata) / sizeof(input_function_metadata[0]) ==

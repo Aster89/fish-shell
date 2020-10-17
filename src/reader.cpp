@@ -504,6 +504,27 @@ struct layout_data_t {
     wcstring right_prompt_buff{};
 };
 
+/// Describes what operation to apply to the text between the old cursor
+/// and the new cursor when moving
+enum class edit_operator_t {
+    /// Just move the cursor
+    none,
+    /// Change (vi-style "c"). Kill the text, then set the input
+    /// binding mode to the hardcoded value "input".
+    // This is a bit of a violation of abstraction boundaries, since the reader state
+    // shouldn't need to know anything about input binding modes, but it's necessary
+    // for usable vi bindings and there doesn't seem to be a better way.
+    change,
+    /// Kill the text
+    kill,
+    /// Copy the text
+    copy,
+    /// Downcase the text
+    downcase,
+    /// Upcase the text
+    upcase
+};
+
 /// A struct describing the state of the interactive reader. These states can be stacked, in case
 /// reader_readline() calls are nested. This happens when the 'read' builtin is used.
 class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
@@ -574,8 +595,12 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     wcstring in_flight_highlight_request;
     wcstring in_flight_autosuggest_request;
 
+    // The next few bits of state are required for vi support,
+    // but in theory they could be used from other keybinding setups too.
     /// How many times to execute the next editing command
     unsigned count{0};
+    /// What to do with the intermediate text when moving the cursor
+    edit_operator_t edit_op {edit_operator_t::none};
 
     bool is_navigating_pager_contents() const { return this->pager.is_navigating_contents(); }
 
@@ -2797,6 +2822,27 @@ maybe_t<char_event_t> reader_data_t::read_normal_chars(readline_loop_state_t &rl
     return event_needing_handling;
 }
 
+static edit_operator_t operator_from_cmd(readline_cmd_t c) {
+    using rl = readline_cmd_t;
+    using eo = edit_operator_t;
+    switch (c) {
+    case rl::clear_operator:
+        return eo::none;
+    case rl::set_operator_copy:
+        return eo::copy;
+    case rl::set_operator_kill:
+        return eo::kill;
+    case rl::set_operator_change:
+        return eo::change;
+    case rl::set_operator_downcase:
+        return eo::downcase;
+    case rl::set_operator_upcase:
+        return eo::upcase;
+    default:
+        assert(false && "command should be an clear_operator or set_operator_*");
+    }
+}
+
 /// Handle a readline command \p c, updating the state \p rls.
 void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_state_t &rls) {
     const auto &vars = this->vars();
@@ -3673,6 +3719,15 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             } else {
                 count *= new_count;
             }
+            break;
+        }
+        case rl::clear_operator:
+        case rl::set_operator_kill:
+        case rl::set_operator_copy:
+        case rl::set_operator_change:
+        case rl::set_operator_downcase:
+        case rl::set_operator_upcase: {
+            edit_op = operator_from_cmd(c);
             break;
         }
             // Some commands should have been handled internally by inputter_t::readch().

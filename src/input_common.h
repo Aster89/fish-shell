@@ -79,6 +79,12 @@ enum class readline_cmd_t {
     redo,
     read_count,
     repeat_jump,
+    clear_operator,
+    set_operator_copy,
+    set_operator_kill,
+    set_operator_change,
+    set_operator_downcase,
+    set_operator_upcase,
     // NOTE: This one has to be last.
     reverse_repeat_jump
 };
