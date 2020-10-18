@@ -2965,21 +2965,64 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
         // Go to beginning of line.
         case rl::beginning_of_line: {
             editable_line_t *el = active_edit_line();
-            while (el->position() > 0 && el->text().at(el->position() - 1) != L'\n') {
-                update_buff_pos(el, el->position() - 1);
+            // All vi implementations I've tried (vim, nvi, neovim, readline, zsh)
+            // ignore [count] here, which is
+            // POSIX-compliant behavior. We do the same.
+            size_t start = el->position();
+            size_t end = start;
+            while (end > 0 && el->text().at(end - 1) != L'\n') {
+                --end;
             }
+            apply_op(edit_op, el, start, end, 0 /* irrelevant */, true);
+            reset();
             break;
         }
         case rl::end_of_line: {
             editable_line_t *el = active_edit_line();
             if (el->position() < el->size()) {
                 const wchar_t *buff = el->text().c_str();
-                while (buff[el->position()] && buff[el->position()] != L'\n') {
-                    update_buff_pos(el, el->position() + 1);
+                unsigned ct = count;
+                size_t start = el->position();
+                size_t end = start;
+
+                // The last newline must be skipped when both:
+                //  * count > 1, AND
+                //  * The starting character is at or before
+                //    the first non-blank character of the line.
+                // This may sound finicky/complicated,
+                // but POSIX, Vim, and Nvi all agree on it .
+                bool skip_last_newline = false;
+                if (count > 1) {
+                    skip_last_newline = true;
+                    size_t tmp = start;
+                    while (tmp > 0 && buff[tmp - 1] != L'\n') {
+                        if (!iswspace(buff[tmp - 1])) {
+                            skip_last_newline = false;
+                            break;
+                        }
+                        --tmp;
+                    }
                 }
+
+                while (ct && buff[end]) {
+                    if (buff[end] == '\n') {
+                        --ct;
+                        // Things like e.g. `2$` are meant to go
+                        // to the end of the _second_ line,
+                        // so if we're not done, we need
+                        // to skip past this newline.
+                        if (ct > 0 || skip_last_newline) {
+                            ++end;
+                        }
+                    } else {
+                        ++end;
+                    }
+                }
+                apply_op(edit_op, el, start, end, 0 /* irrelevant */, true);
             } else {
                 accept_autosuggestion(true);
             }
+            reset();
             break;
         }
         case rl::beginning_of_buffer: {
