@@ -739,7 +739,7 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     void exec_prompt();
 
     bool jump(jump_direction_t dir, jump_precision_t precision, editable_line_t *el,
-              wchar_t target);
+              wchar_t target, edit_operator_t op, int kill_mode, bool kill_newv);
 
     bool handle_completions(const completion_list_t &comp, size_t token_begin, size_t token_end);
 
@@ -3777,9 +3777,18 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             auto precision = (c == rl::forward_jump || c == rl::backward_jump)
                                  ? jump_precision_t::to
                                  : jump_precision_t::till;
+            int kill_mode = (direction == jump_direction_t::forward)
+                                 ? KILL_APPEND
+                                 : KILL_PREPEND;
             editable_line_t *el = active_edit_line();
             wchar_t target = inputter.function_pop_arg().unwrap_character();
-            bool success = jump(direction, precision, el, target);
+            bool success = true;
+            for (unsigned i = 0; success && i < count; ++i) {
+                success = jump(direction, 
+                    (i == count - 1) ? precision : jump_precision_t::to,
+                    el, target, edit_op, kill_mode, i == 0);
+            }
+            reset();
 
             inputter.function_set_status(success);
             break;
@@ -3787,9 +3796,18 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
         case rl::repeat_jump: {
             editable_line_t *el = active_edit_line();
             bool success = false;
-
             if (last_jump_target) {
-                success = jump(last_jump_direction, last_jump_precision, el, last_jump_target);
+                int kill_mode = (last_jump_direction == jump_direction_t::forward)
+                                     ? KILL_APPEND
+                                     : KILL_PREPEND;
+
+                success = true;
+                for (unsigned i = 0; success && i < count; ++i) {
+                    success = jump(last_jump_direction,
+                        (i == count - 1) ? last_jump_precision : jump_precision_t::to,
+                        el, last_jump_target, edit_op, kill_mode, i == 0);
+                }
+                reset();
             }
 
             inputter.function_set_status(success);
@@ -3800,15 +3818,23 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             bool success = false;
             jump_direction_t original_dir, dir;
             original_dir = last_jump_direction;
+            int kill_mode;
 
             if (last_jump_direction == jump_direction_t::forward) {
                 dir = jump_direction_t::backward;
+                kill_mode = KILL_PREPEND;
             } else {
                 dir = jump_direction_t::forward;
+                kill_mode = KILL_APPEND;
             }
 
             if (last_jump_target) {
-                success = jump(dir, last_jump_precision, el, last_jump_target);
+                success = true;
+                for (unsigned i = 0; success && i < count; ++i) {
+                    success = jump(dir, last_jump_precision,
+                        el, last_jump_target, edit_op, kill_mode, i == 0);
+                }
+                reset();
             }
 
             last_jump_direction = original_dir;
@@ -4051,23 +4077,24 @@ maybe_t<wcstring> reader_data_t::readline(int nchars_or_0) {
 }
 
 bool reader_data_t::jump(jump_direction_t dir, jump_precision_t precision, editable_line_t *el,
-                         wchar_t target) {
+                         wchar_t target, edit_operator_t op, int kill_mode, bool kill_newv) {
     bool success = false;
 
     last_jump_target = target;
     last_jump_direction = dir;
     last_jump_precision = precision;
 
+    size_t start = el->position();
+    size_t end = start;;
+
     switch (dir) {
         case jump_direction_t::backward: {
-            size_t tmp_pos = el->position();
 
-            while (tmp_pos--) {
-                if (el->at(tmp_pos) == target) {
+            while (end--) {
+                if (el->at(end) == target) {
                     if (precision == jump_precision_t::till) {
-                        tmp_pos = std::min(el->size() - 1, tmp_pos + 1);
+                        end = std::min(el->size() - 1, end + 1);
                     }
-                    update_buff_pos(el, tmp_pos);
                     success = true;
                     break;
                 }
@@ -4075,12 +4102,12 @@ bool reader_data_t::jump(jump_direction_t dir, jump_precision_t precision, edita
             break;
         }
         case jump_direction_t::forward: {
-            for (size_t tmp_pos = el->position() + 1; tmp_pos < el->size(); tmp_pos++) {
-                if (el->at(tmp_pos) == target) {
-                    if (precision == jump_precision_t::till && tmp_pos) {
-                        tmp_pos--;
+            ++end;
+            for (; end < el->size(); end++) {
+                if (el->at(end) == target) {
+                    if (precision == jump_precision_t::till && end) {
+                        end--;
                     }
-                    update_buff_pos(el, tmp_pos);
                     success = true;
                     break;
                 }
@@ -4089,6 +4116,9 @@ bool reader_data_t::jump(jump_direction_t dir, jump_precision_t precision, edita
         }
     }
 
+    if (success) {
+        apply_op(op, el, start, end, kill_mode, kill_newv);
+    }
     return success;
 }
 
