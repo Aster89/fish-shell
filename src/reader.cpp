@@ -598,7 +598,7 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     // The next few bits of state are required for vi support,
     // but in theory they could be used from other keybinding setups too.
     /// How many times to execute the next editing command
-    unsigned count{0};
+    unsigned count{1};
     /// What to do with the intermediate text when moving the cursor
     edit_operator_t edit_op {edit_operator_t::none};
 
@@ -665,6 +665,8 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
 
     void update_buff_pos(editable_line_t *el, maybe_t<size_t> new_pos = none_t());
 
+    void apply_op(edit_operator_t op, editable_line_t *el, size_t start, size_t end, int kill_mode, bool kill_newv);
+    void copy(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv);
     void kill(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv);
     /// Inserts a substring of str given by start, len at the cursor position.
     void insert_string(editable_line_t *el, const wcstring &str);
@@ -683,8 +685,8 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     /// \return the command, or none if we were asked to cancel (e.g. SIGHUP).
     maybe_t<wcstring> readline(int nchars);
 
-    void move_word(editable_line_t *el, bool move_right, bool erase, enum move_word_style_t style,
-                   bool newv);
+    void move_word(editable_line_t *el, bool move_right, edit_operator_t op,
+                   enum move_word_style_t style, bool newv, bool nextword);
 
     void run_input_command_scripts(const wcstring_list_t &cmds);
     maybe_t<char_event_t> read_normal_chars(readline_loop_state_t &rls);
@@ -1029,7 +1031,7 @@ void reader_data_t::paint_layout(const wchar_t *reason) {
 }
 
 /// Internal helper function for handling killing parts of text.
-void reader_data_t::kill(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv) {
+void reader_data_t::copy(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv) {
     const wchar_t *begin = el->text().c_str() + begin_idx;
     if (newv) {
         kill_item = wcstring(begin, length);
@@ -1045,6 +1047,10 @@ void reader_data_t::kill(editable_line_t *el, size_t begin_idx, size_t length, i
 
         kill_replace(old, kill_item);
     }
+}
+
+void reader_data_t::kill(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv) {
+    copy(el, begin_idx, length, mode, newv);
     erase_substring(el, begin_idx, length);
 }
 
@@ -2253,6 +2259,42 @@ void reader_data_t::update_command_line_from_history_search() {
     update_buff_pos(el);
 }
 
+void reader_data_t::apply_op(edit_operator_t op, editable_line_t *el, size_t start, size_t end,
+                             int kill_mode, bool kill_newv) {
+    size_t left, right;
+    if (start <= end) {
+        left = start;
+        right = end;
+    } else {
+        left = end;
+        right = start;
+    }
+    using eo = edit_operator_t;
+    switch (op) {
+    case eo::none:
+        update_buff_pos(el, end);
+        break;
+    case eo::kill:
+        // Don't autosuggest after a kill.
+        if (el == &this->command_line) {
+            suppress_autosuggestion = true;
+        }
+
+        kill(el, left, right - left, kill_mode, kill_newv);
+        break;
+    case eo::copy:
+        copy(el, left, right - left, kill_mode, kill_newv);
+        break;
+    case eo::change:
+        kill(el, left, right - left, kill_mode, kill_newv);
+        // see note on the definition of edit_operator_t::change
+        vars().set_one(FISH_BIND_MODE_VAR, ENV_GLOBAL, L"insert");
+        break;
+    case eo::upcase:
+    case eo::downcase:
+        abort(); // [BTV] todo
+    }
+}
 enum move_word_dir_t { MOVE_DIR_LEFT, MOVE_DIR_RIGHT };
 
 /// Move buffer position one word or erase one word. This function updates both the internal buffer
@@ -2261,14 +2303,14 @@ enum move_word_dir_t { MOVE_DIR_LEFT, MOVE_DIR_RIGHT };
 /// \param move_right true if moving right
 /// \param erase Whether to erase the characters along the way or only move past them.
 /// \param newv if the new kill item should be appended to the previous kill item or not.
-void reader_data_t::move_word(editable_line_t *el, bool move_right, bool erase,
-                              enum move_word_style_t style, bool newv) {
+void reader_data_t::move_word(editable_line_t *el, bool move_right, edit_operator_t op,
+                              enum move_word_style_t style, bool newv, bool nextword) {
     // Return if we are already at the edge.
     const size_t boundary = move_right ? el->size() : 0;
     if (el->position() == boundary) return;
 
     // When moving left, a value of 1 means the character at index 0.
-    move_word_state_machine_t state(style);
+    move_word_state_machine_t state(style, nextword);
     const wchar_t *const command_line = el->text().c_str();
     const size_t start_buff_pos = el->position();
 
@@ -2285,19 +2327,10 @@ void reader_data_t::move_word(editable_line_t *el, bool move_right, bool erase,
 
     // If we are moving left, buff_pos-1 is the index of the first character we do not delete
     // (possibly -1). If we are moving right, then buff_pos is that index - possibly el->size().
-    if (erase) {
-        // Don't autosuggest after a kill.
-        if (el == &this->command_line) {
-            suppress_autosuggestion = true;
-        }
-
-        if (move_right) {
-            kill(el, start_buff_pos, buff_pos - start_buff_pos, KILL_APPEND, newv);
-        } else {
-            kill(el, buff_pos, start_buff_pos - buff_pos, KILL_PREPEND, newv);
-        }
+    if (move_right) {
+        apply_op(op, el, start_buff_pos, buff_pos, KILL_APPEND, newv);
     } else {
-        update_buff_pos(el, buff_pos);
+        apply_op(op, el, buff_pos, start_buff_pos, KILL_PREPEND, newv);
     }
 }
 
@@ -2847,6 +2880,32 @@ static edit_operator_t operator_from_cmd(readline_cmd_t c) {
 void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_state_t &rls) {
     const auto &vars = this->vars();
     using rl = readline_cmd_t;
+    // Vi wart: cw and cW are sometimes interpreted as ce and cE.
+    // As explained by motion.txt from Vim's reference manual:
+    // > Special case: "cw" and "cW" are treated like "ce" and "cE" if the cursor is
+    // > on a non-blank.  This is because "cw" is interpreted as change-word, and a
+    // > word does not include the following white space.
+    //
+    // For whatever reason, `cge` (a Vim extension) isn't interpreted as `cb`,
+    // although one might expect it to be, for similar reasons. To maintain
+    // compatibility with Vim, only munge the motion for the "forward" variants.
+    if (edit_op == edit_operator_t::change) {
+        editable_line_t *el = active_edit_line();
+        size_t pos = el->position();
+        bool non_blank = (pos < el->size()) && !iswspace(el->text()[pos]);
+        if (non_blank) {
+            switch (c) {
+            case rl::forward_nextword:
+                c = rl::forward_word;
+                break;
+            case rl::forward_bignextword:
+                c = rl::forward_bigword;
+                break;
+            default:
+                break;
+            }
+        }
+    }
     switch (c) {
         // Go to beginning of line.
         case rl::beginning_of_line: {
@@ -3337,7 +3396,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             bool newv = (rls.last_cmd != rl::backward_kill_word &&
                          rls.last_cmd != rl::backward_kill_path_component &&
                          rls.last_cmd != rl::backward_kill_bigword);
-            move_word(active_edit_line(), MOVE_DIR_LEFT, true /* erase */, style, newv);
+            move_word(active_edit_line(), MOVE_DIR_LEFT, edit_operator_t::kill, style, newv, false);
             break;
         }
         case rl::kill_word:
@@ -3346,27 +3405,34 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             // punctuation.
             auto move_style =
                 (c == rl::kill_word) ? move_word_style_punctuation : move_word_style_whitespace;
-            move_word(active_edit_line(), MOVE_DIR_RIGHT, true /* erase */, move_style,
-                      rls.last_cmd != c /* same kill item if same movement */);
+            move_word(active_edit_line(), MOVE_DIR_RIGHT, edit_operator_t::kill, move_style,
+                      rls.last_cmd != c /* same kill item if same movement */, false);
             break;
         }
         case rl::backward_word:
-        case rl::backward_bigword: {
+        case rl::backward_bigword: 
+        case rl::backward_nextword:
+        case rl::backward_bignextword: {
             auto move_style =
-                (c == rl::backward_word) ? move_word_style_punctuation : move_word_style_whitespace;
-            move_word(active_edit_line(), MOVE_DIR_LEFT, false /* do not erase */, move_style,
-                      false);
+                (c == rl::backward_word || c == rl::backward_nextword)
+                    ? move_word_style_punctuation : move_word_style_whitespace;
+            bool nextword = (c == rl::backward_nextword || c == rl::backward_bignextword);
+            move_word(active_edit_line(), MOVE_DIR_LEFT, edit_op, move_style,
+                      false, nextword);
             break;
         }
         case rl::forward_word:
-        case rl::forward_bigword: {
+        case rl::forward_bigword:
+        case rl::forward_nextword:
+        case rl::forward_bignextword: {
             auto move_style =
                 (c == rl::forward_word) ? move_word_style_punctuation : move_word_style_whitespace;
+            bool nextword = (c == rl::forward_nextword || c == rl::forward_bignextword);
             editable_line_t *el = active_edit_line();
             if (el->position() < el->size()) {
-                move_word(el, MOVE_DIR_RIGHT, false /* do not erase */, move_style, false);
+                move_word(el, MOVE_DIR_RIGHT, edit_op, move_style, false, nextword);
             } else {
-                accept_autosuggestion(false, false, move_style);
+                accept_autosuggestion(false, false, move_style); // [BTV] todo - think about how nextword affects this
             }
             break;
         }
@@ -3581,7 +3647,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             // We apply the operation from the current location to the end of the word.
             size_t pos = el->position();
             size_t init_pos = pos;
-            move_word(el, MOVE_DIR_RIGHT, false, move_word_style_punctuation, false);
+            move_word(el, MOVE_DIR_RIGHT, edit_operator_t::none, move_word_style_punctuation, false, false);
             wcstring replacement;
             for (; pos < el->position(); pos++) {
                 wchar_t chr = el->text().at(pos);
@@ -3713,12 +3779,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             break;
         }
         case rl::read_count: {
-            unsigned new_count = inputter.function_pop_arg().unwrap_number();
-            if (count == 0) {
-                count = new_count;
-            } else {
-                count *= new_count;
-            }
+            count *= inputter.function_pop_arg().unwrap_number();
             break;
         }
         case rl::clear_operator:

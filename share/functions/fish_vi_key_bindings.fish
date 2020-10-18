@@ -111,10 +111,10 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset B backward-bigword
     bind -s --preset ge backward-word
     bind -s --preset gE backward-bigword
-    bind -s --preset w forward-word forward-single-char
-    bind -s --preset W forward-bigword forward-single-char
-    bind -s --preset e forward-single-char forward-word backward-char
-    bind -s --preset E forward-bigword backward-char
+    bind -s --preset w forward-nextword
+    bind -s --preset W forward-bignextword
+    bind -s --preset e forward-word
+    bind -s --preset E forward-bigword
 
     # OS X SnowLeopard doesn't have these keys. Don't show an annoying error message.
     # Vi/Vim doesn't support these keys in insert mode but that seems silly so we do so anyway.
@@ -146,14 +146,10 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset d\$ kill-line
     bind -s --preset d\^ backward-kill-line
     bind -s --preset d0 backward-kill-line
-    bind -s --preset dw kill-word
-    bind -s --preset dW kill-bigword
     bind -s --preset diw forward-single-char forward-single-char backward-word kill-word
     bind -s --preset diW forward-single-char forward-single-char backward-bigword kill-bigword
     bind -s --preset daw forward-single-char forward-single-char backward-word kill-word
     bind -s --preset daW forward-single-char forward-single-char backward-bigword kill-bigword
-    bind -s --preset de kill-word
-    bind -s --preset dE kill-bigword
     bind -s --preset db backward-kill-word
     bind -s --preset dB backward-kill-bigword
     bind -s --preset dge backward-kill-word
@@ -176,7 +172,6 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -m insert c\$ kill-line repaint-mode
     bind -s --preset -m insert c\^ backward-kill-line repaint-mode
     bind -s --preset -m insert c0 backward-kill-line repaint-mode
-    bind -s --preset -m insert cw kill-word repaint-mode
     bind -s --preset -m insert cW kill-bigword repaint-mode
     bind -s --preset -m insert ciw forward-single-char forward-single-char backward-word kill-word repaint-mode
     bind -s --preset -m insert ciW forward-single-char forward-single-char backward-bigword kill-bigword repaint-mode
@@ -324,6 +319,9 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -M default -n 8 read-count
     bind -s --preset -M default -n 9 read-count
     bind -s --preset -M default z read-count
+
+    bind -s --preset -M default c set-operator-change
+    bind -s --preset -M default d set-operator-kill
 
     # Set the cursor shape
     # After executing once, this will have defined functions listening for the variable.

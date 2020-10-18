@@ -676,6 +676,7 @@ wcstring tok_command(const wcstring &str) {
     return {};
 }
 
+// [BTV] todo make this work with trailing ws
 bool move_word_state_machine_t::consume_char_punctuation(wchar_t c) {
     enum { s_always_one = 0, s_rest, s_whitespace_rest, s_whitespace, s_alphanumeric, s_end };
 
@@ -809,8 +810,8 @@ bool move_word_state_machine_t::consume_char_path_components(wchar_t c) {
     return consumed;
 }
 
-bool move_word_state_machine_t::consume_char_whitespace(wchar_t c) {
-    // Consume a "word" of printable characters plus any leading whitespace.
+bool move_word_state_machine_t::consume_char_whitespace(wchar_t c, bool trailing) {
+    // Consume a "word" of printable characters plus any leading (xor trailing) whitespace.
     enum { s_always_one = 0, s_blank, s_graph, s_end };
 
     bool consumed = false;
@@ -831,7 +832,11 @@ bool move_word_state_machine_t::consume_char_whitespace(wchar_t c) {
                 if (iswspace(c)) {
                     consumed = true;  // consumed whitespace
                 } else {
-                    state = s_graph;
+                    if (trailing) {
+                        state = s_end;
+                    } else {
+                        state = s_graph;
+                    }
                 }
                 break;
             }
@@ -839,7 +844,11 @@ bool move_word_state_machine_t::consume_char_whitespace(wchar_t c) {
                 if (!iswspace(c)) {
                     consumed = true;  // consumed printable non-space
                 } else {
-                    state = s_end;
+                    if (trailing) {
+                        state = s_blank;
+                    } else {
+                        state = s_end;
+                    }
                 }
                 break;
             }
@@ -861,15 +870,15 @@ bool move_word_state_machine_t::consume_char(wchar_t c) {
             return consume_char_path_components(c);
         }
         case move_word_style_whitespace: {
-            return consume_char_whitespace(c);
+            return consume_char_whitespace(c, nextword);
         }
     }
 
     DIE("should not reach this statement");  // silence some compiler errors about not returning
 }
 
-move_word_state_machine_t::move_word_state_machine_t(move_word_style_t syl)
-    : state(0), style(syl) {}
+move_word_state_machine_t::move_word_state_machine_t(move_word_style_t syl, bool nw)
+    : state(0), style(syl), nextword(nw) {}
 
 void move_word_state_machine_t::reset() { state = 0; }
 
