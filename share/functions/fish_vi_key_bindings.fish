@@ -144,28 +144,6 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -m insert s delete-char repaint-mode
     bind -s --preset -m insert S kill-whole-line repaint-mode
     bind -s --preset -m insert C kill-line repaint-mode
-    bind -s --preset -m insert c\$ kill-line repaint-mode
-    bind -s --preset -m insert c\^ backward-kill-line repaint-mode
-    bind -s --preset -m insert c0 backward-kill-line repaint-mode
-    bind -s --preset -m insert cW kill-bigword repaint-mode
-    bind -s --preset -m insert ciw forward-single-char forward-single-char backward-word kill-word repaint-mode
-    bind -s --preset -m insert ciW forward-single-char forward-single-char backward-bigword kill-bigword repaint-mode
-    bind -s --preset -m insert caw forward-single-char forward-single-char backward-word kill-word repaint-mode
-    bind -s --preset -m insert caW forward-single-char forward-single-char backward-bigword kill-bigword repaint-mode
-    bind -s --preset -m insert ce kill-word repaint-mode
-    bind -s --preset -m insert cE kill-bigword repaint-mode
-    bind -s --preset -m insert cb backward-kill-word repaint-mode
-    bind -s --preset -m insert cB backward-kill-bigword repaint-mode
-    bind -s --preset -m insert cge backward-kill-word repaint-mode
-    bind -s --preset -m insert cgE backward-kill-bigword repaint-mode
-    bind -s --preset -m insert cf begin-selection forward-jump kill-selection end-selection repaint-mode
-    bind -s --preset -m insert ct begin-selection forward-jump backward-char kill-selection end-selection repaint-mode
-    bind -s --preset -m insert cF begin-selection backward-jump kill-selection end-selection repaint-mode
-    bind -s --preset -m insert cT begin-selection backward-jump forward-single-char kill-selection end-selection repaint-mode
-    bind -s --preset -m insert ch backward-char begin-selection kill-selection end-selection repaint-mode
-    bind -s --preset -m insert cl begin-selection kill-selection end-selection repaint-mode
-    bind -s --preset -m insert ci backward-jump-till and repeat-jump-reverse and begin-selection repeat-jump kill-selection end-selection repaint-mode
-    bind -s --preset -m insert ca backward-jump and repeat-jump-reverse and begin-selection repeat-jump kill-selection end-selection repaint-mode
 
     bind -s --preset '~' togglecase-char forward-single-char
     bind -s --preset gu downcase-word

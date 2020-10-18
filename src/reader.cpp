@@ -612,7 +612,7 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     }
 
     void set_edit_op(edit_operator_t op) {
-        fprintf(stderr, "In set_edit_op; op: %d", op);
+        // fprintf(stderr, "In set_edit_op; op: %d", op);
         if (op != edit_operator_t::none && op == edit_op) {
             // vi "yy", "dd", etc.
             // We intentionally handle this logic in c++, rather
@@ -2341,6 +2341,10 @@ void reader_data_t::apply_op_to_lines(edit_operator_t op, editable_line_t *el, u
         if (buff[end - 1] == L'\n') {
             --count;
         }
+    }
+    // Yet another "change" wart: cc doesn't kill the newline.
+    if (op == edit_operator_t::change && end > begin && buff[end - 1] == L'\n') {
+        --end;
     }
     assert(end >= begin);
 
