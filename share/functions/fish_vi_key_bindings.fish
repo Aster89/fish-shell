@@ -152,31 +152,6 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset J end-of-line delete-char
     bind -s --preset K 'man (commandline -t) 2>/dev/null; or echo -n \a'
 
-    bind -s --preset Y kill-whole-line yank
-    bind -s --preset y\$ kill-line yank
-    bind -s --preset y\^ backward-kill-line yank
-    bind -s --preset y0 backward-kill-line yank
-    bind -s --preset yw kill-word yank
-    bind -s --preset yW kill-bigword yank
-    bind -s --preset yiw forward-single-char forward-single-char backward-word kill-word yank
-    bind -s --preset yiW forward-single-char forward-single-char backward-bigword kill-bigword yank
-    bind -s --preset yaw forward-single-char forward-single-char backward-word kill-word yank
-    bind -s --preset yaW forward-single-char forward-single-char backward-bigword kill-bigword yank
-    bind -s --preset ye kill-word yank
-    bind -s --preset yE kill-bigword yank
-    bind -s --preset yb backward-kill-word yank
-    bind -s --preset yB backward-kill-bigword yank
-    bind -s --preset yge backward-kill-word yank
-    bind -s --preset ygE backward-kill-bigword yank
-    bind -s --preset yf begin-selection forward-jump kill-selection yank end-selection
-    bind -s --preset yt begin-selection forward-jump-till kill-selection yank end-selection
-    bind -s --preset yF begin-selection backward-jump kill-selection yank end-selection
-    bind -s --preset yT begin-selection backward-jump-till kill-selection yank end-selection
-    bind -s --preset yh backward-char begin-selection kill-selection yank end-selection
-    bind -s --preset yl begin-selection kill-selection yank end-selection
-    bind -s --preset yi backward-jump-till and repeat-jump-reverse and begin-selection repeat-jump kill-selection yank end-selection
-    bind -s --preset ya backward-jump and repeat-jump-reverse and begin-selection repeat-jump kill-selection yank end-selection
-
     bind -s --preset f forward-jump
     bind -s --preset F backward-jump
     bind -s --preset t forward-jump-till
