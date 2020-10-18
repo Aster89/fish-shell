@@ -514,6 +514,9 @@ enum class edit_operator_t {
     // This is a bit of a violation of abstraction boundaries, since the reader state
     // shouldn't need to know anything about input binding modes, but it's necessary
     // for usable vi bindings and there doesn't seem to be a better way.
+    // In particular, we can't just set `sets_bind_mode` to `insert` on the `c`
+    // binding, because the mode needs to change after the whole _motion_,
+    // (e.g., "c2f;"), not just after the `c` binding is consumed.
     change,
     /// Kill the text
     kill,
@@ -602,6 +605,28 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     /// What to do with the intermediate text when moving the cursor
     edit_operator_t edit_op {edit_operator_t::none};
 
+    /// Reset the command state (currently: `count` and `edit_op`).
+    void reset() {
+        count = 1;
+        edit_op = edit_operator_t::none;
+    }
+
+    void set_edit_op(edit_operator_t op) {
+        fprintf(stderr, "In set_edit_op; op: %d", op);
+        if (op != edit_operator_t::none && op == edit_op) {
+            // vi "yy", "dd", etc.
+            // We intentionally handle this logic in c++, rather
+            // than just setting them up in fish_vi_key_bindings,
+            // because, just like for motions, we need to
+            // use counts: 2y3y should copy 6 lines, and so on.
+            apply_op_to_lines(op, active_edit_line(), count, 0 /* irrelevant */, true);
+            reset();
+        }
+        else {
+            edit_op = op;
+        }
+    }
+
     bool is_navigating_pager_contents() const { return this->pager.is_navigating_contents(); }
 
     /// The line that is currently being edited. Typically the command line, but may be the search
@@ -666,6 +691,7 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     void update_buff_pos(editable_line_t *el, maybe_t<size_t> new_pos = none_t());
 
     void apply_op(edit_operator_t op, editable_line_t *el, size_t start, size_t end, int kill_mode, bool kill_newv);
+    void apply_op_to_lines(edit_operator_t op, editable_line_t *el, unsigned lines, int kill_mode, bool kill_newv);
     void copy(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv);
     void kill(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv);
     /// Inserts a substring of str given by start, len at the cursor position.
@@ -2295,6 +2321,31 @@ void reader_data_t::apply_op(edit_operator_t op, editable_line_t *el, size_t sta
         abort(); // [BTV] todo
     }
 }
+
+void reader_data_t::apply_op_to_lines(edit_operator_t op, editable_line_t *el, unsigned count, int kill_mode, bool kill_newv) {
+    const wchar_t *buff = el->text().c_str();
+
+    // Back up to the character just past the previous newline, or go to the beginning
+    // of the command line. Note that if the position is on a newline, visually this
+    // looks like the cursor is at the end of a line. Therefore that newline is NOT the
+    // beginning of a line; this justifies the -1 check.
+    size_t begin = el->position();
+    while (begin > 0 && buff[begin - 1] != L'\n') {
+        begin--;
+    }
+
+    // Push end forwards to just past the next `count` newlines, or just past the last char.
+    size_t end = el->position();
+    while (buff[end] != L'\0' && count > 0) {
+        end++;
+        if (buff[end - 1] == L'\n') {
+            --count;
+        }
+    }
+    assert(end >= begin);
+
+    apply_op(op, el, begin, end, kill_mode, kill_newv);
+}
 enum move_word_dir_t { MOVE_DIR_LEFT, MOVE_DIR_RIGHT };
 
 /// Move buffer position one word or erase one word. This function updates both the internal buffer
@@ -3417,8 +3468,11 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
                 (c == rl::backward_word || c == rl::backward_nextword)
                     ? move_word_style_punctuation : move_word_style_whitespace;
             bool nextword = (c == rl::backward_nextword || c == rl::backward_bignextword);
-            move_word(active_edit_line(), MOVE_DIR_LEFT, edit_op, move_style,
-                      false, nextword);
+            for (unsigned i = 0; i < count; ++i) {
+                move_word(active_edit_line(), MOVE_DIR_LEFT, edit_op, move_style,
+                          i == 0, nextword);
+            }
+            reset();
             break;
         }
         case rl::forward_word:
@@ -3430,10 +3484,13 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             bool nextword = (c == rl::forward_nextword || c == rl::forward_bignextword);
             editable_line_t *el = active_edit_line();
             if (el->position() < el->size()) {
-                move_word(el, MOVE_DIR_RIGHT, edit_op, move_style, false, nextword);
+                for (unsigned i = 0; i < count; ++i) {
+                    move_word(el, MOVE_DIR_RIGHT, edit_op, move_style, i == 0, nextword);
+                }
             } else {
                 accept_autosuggestion(false, false, move_style); // [BTV] todo - think about how nextword affects this
             }
+            reset();
             break;
         }
         case rl::beginning_of_history:
@@ -3788,7 +3845,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
         case rl::set_operator_change:
         case rl::set_operator_downcase:
         case rl::set_operator_upcase: {
-            edit_op = operator_from_cmd(c);
+            set_edit_op(operator_from_cmd(c));
             break;
         }
             // Some commands should have been handled internally by inputter_t::readch().

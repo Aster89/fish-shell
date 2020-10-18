@@ -141,33 +141,8 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -M insert \e\[3\;2~ backward-delete-char # Mavericks Terminal.app shift-ctrl-delete
     bind -s --preset -M default \e\[3\;2~ backward-delete-char # Mavericks Terminal.app shift-ctrl-delete
 
-    bind -s --preset dd kill-whole-line
-    bind -s --preset D kill-line
-    bind -s --preset d\$ kill-line
-    bind -s --preset d\^ backward-kill-line
-    bind -s --preset d0 backward-kill-line
-    bind -s --preset diw forward-single-char forward-single-char backward-word kill-word
-    bind -s --preset diW forward-single-char forward-single-char backward-bigword kill-bigword
-    bind -s --preset daw forward-single-char forward-single-char backward-word kill-word
-    bind -s --preset daW forward-single-char forward-single-char backward-bigword kill-bigword
-    bind -s --preset db backward-kill-word
-    bind -s --preset dB backward-kill-bigword
-    bind -s --preset dge backward-kill-word
-    bind -s --preset dgE backward-kill-bigword
-    bind -s --preset df begin-selection forward-jump kill-selection end-selection
-    bind -s --preset dt begin-selection forward-jump backward-char kill-selection end-selection
-    bind -s --preset dF begin-selection backward-jump kill-selection end-selection
-    bind -s --preset dT begin-selection backward-jump forward-single-char kill-selection end-selection
-    bind -s --preset dh backward-char delete-char
-    bind -s --preset dl delete-char
-    bind -s --preset di backward-jump-till and repeat-jump-reverse and begin-selection repeat-jump kill-selection end-selection
-    bind -s --preset da backward-jump and repeat-jump-reverse and begin-selection repeat-jump kill-selection end-selection
-    bind -s --preset 'd;' begin-selection repeat-jump kill-selection end-selection
-    bind -s --preset 'd,' begin-selection repeat-jump-reverse kill-selection end-selection
-
     bind -s --preset -m insert s delete-char repaint-mode
     bind -s --preset -m insert S kill-whole-line repaint-mode
-    bind -s --preset -m insert cc kill-whole-line repaint-mode
     bind -s --preset -m insert C kill-line repaint-mode
     bind -s --preset -m insert c\$ kill-line repaint-mode
     bind -s --preset -m insert c\^ backward-kill-line repaint-mode
@@ -199,7 +174,6 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset J end-of-line delete-char
     bind -s --preset K 'man (commandline -t) 2>/dev/null; or echo -n \a'
 
-    bind -s --preset yy kill-whole-line yank
     bind -s --preset Y kill-whole-line yank
     bind -s --preset y\$ kill-line yank
     bind -s --preset y\^ backward-kill-line yank
@@ -309,6 +283,7 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     
     bind -s --preset -M replace \# __fish_toggle_comment_commandline
 
+    # 0 is intentionally absent -- it's a motion meaning "beginning of line".
     bind -s --preset -M default -n 1 read-count
     bind -s --preset -M default -n 2 read-count
     bind -s --preset -M default -n 3 read-count
@@ -318,10 +293,10 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -M default -n 7 read-count
     bind -s --preset -M default -n 8 read-count
     bind -s --preset -M default -n 9 read-count
-    bind -s --preset -M default z read-count
 
     bind -s --preset -M default c set-operator-change
     bind -s --preset -M default d set-operator-kill
+    bind -s --preset -M default y set-operator-copy
 
     # Set the cursor shape
     # After executing once, this will have defined functions listening for the variable.
