@@ -196,7 +196,7 @@ enum move_word_style_t {
 /// Our state machine that implements "one word" movement or erasure.
 class move_word_state_machine_t {
    private:
-    bool consume_char_punctuation(wchar_t c);
+    bool consume_char_punctuation(wchar_t c, bool trailing);
     bool consume_char_path_components(wchar_t c);
     bool is_path_component_character(wchar_t c);
     bool consume_char_whitespace(wchar_t c, bool trailing);
@@ -206,7 +206,7 @@ class move_word_state_machine_t {
     bool nextword;
 
    public:
-    explicit move_word_state_machine_t(move_word_style_t syl, bool nw=false);
+    explicit move_word_state_machine_t(move_word_style_t syl, bool nw);
     bool consume_char(wchar_t c);
     void reset();
 };

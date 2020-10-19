@@ -676,9 +676,8 @@ wcstring tok_command(const wcstring &str) {
     return {};
 }
 
-// [BTV] todo make this work with trailing ws
-bool move_word_state_machine_t::consume_char_punctuation(wchar_t c) {
-    enum { s_always_one = 0, s_rest, s_whitespace_rest, s_whitespace, s_alphanumeric, s_end };
+bool move_word_state_machine_t::consume_char_punctuation(wchar_t c, bool trailing) {
+    enum { s_always_one = 0, s_rest, s_whitespace, s_alphanumeric, s_end };
 
     bool consumed = false;
     while (state != s_end && !consumed) {
@@ -699,34 +698,46 @@ bool move_word_state_machine_t::consume_char_punctuation(wchar_t c) {
             }
             case s_rest: {
                 if (iswspace(c)) {
-                    // Consume only trailing whitespace.
-                    state = s_whitespace_rest;
+                    if (trailing) {
+                        state = s_whitespace;
+                    } else {
+                        state = s_end;
+                    }
                 } else if (iswalnum(c)) {
-                    // Consume only alnums.
-                    state = s_alphanumeric;
-                } else {
-                    consumed = false;
                     state = s_end;
+                } else {
+                    consumed = true;
                 }
                 break;
             }
-            case s_whitespace_rest:
             case s_whitespace: {
                 // "whitespace" consumes whitespace and switches to alnums,
                 // "whitespace_rest" only consumes whitespace.
                 if (iswspace(c)) {
                     // Consumed whitespace.
                     consumed = true;
+                } else if (!trailing) {
+                    if (iswalnum(c)) {
+                        state = s_alphanumeric;
+                    } else {
+                        state = s_rest;
+                    }
                 } else {
-                    state = state == s_whitespace ? s_alphanumeric : s_end;
+                    state = s_end;
                 }
                 break;
             }
             case s_alphanumeric: {
-                if (iswalnum(c)) {
-                    consumed = true;  // consumed alphanumeric
-                } else {
+                if (iswspace(c)) {
+                    if (trailing) {
+                        state = s_whitespace;
+                    } else {
+                        state = s_end;
+                    }
+                } else if (!iswalnum(c)) {
                     state = s_end;
+                } else {
+                    consumed = true;
                 }
                 break;
             }
@@ -864,7 +875,7 @@ bool move_word_state_machine_t::consume_char_whitespace(wchar_t c, bool trailing
 bool move_word_state_machine_t::consume_char(wchar_t c) {
     switch (style) {
         case move_word_style_punctuation: {
-            return consume_char_punctuation(c);
+            return consume_char_punctuation(c, nextword);
         }
         case move_word_style_path_components: {
             return consume_char_path_components(c);

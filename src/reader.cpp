@@ -528,6 +528,15 @@ enum class edit_operator_t {
     upcase
 };
 
+enum class move_word_behavior_t {
+    /// Go one character past the end of the current word
+    past_end,
+    /// Go to the next word
+    next,
+    /// Go to the end of the current word
+    end
+};
+
 /// A struct describing the state of the interactive reader. These states can be stacked, in case
 /// reader_readline() calls are nested. This happens when the 'read' builtin is used.
 class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
@@ -712,7 +721,7 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
     maybe_t<wcstring> readline(int nchars);
 
     void move_word(editable_line_t *el, bool move_right, edit_operator_t op,
-                   enum move_word_style_t style, bool newv, bool nextword);
+                   enum move_word_style_t style, bool newv, move_word_behavior_t behavior);
 
     void run_input_command_scripts(const wcstring_list_t &cmds);
     maybe_t<char_event_t> read_normal_chars(readline_loop_state_t &rls);
@@ -1787,7 +1796,7 @@ void reader_data_t::accept_autosuggestion(bool full, bool single, move_word_styl
                               autosuggestion.text.substr(command_line.size(), 1));
         } else {
             // Accept characters according to the specified style.
-            move_word_state_machine_t state(style);
+            move_word_state_machine_t state(style, false);
             size_t want;
             for (want = command_line.size(); want < autosuggestion.text.size(); want++) {
                 wchar_t wc = autosuggestion.text.at(want);
@@ -2352,6 +2361,7 @@ void reader_data_t::apply_op_to_lines(edit_operator_t op, editable_line_t *el, u
 }
 enum move_word_dir_t { MOVE_DIR_LEFT, MOVE_DIR_RIGHT };
 
+
 /// Move buffer position one word or erase one word. This function updates both the internal buffer
 /// and the screen. It is used by M-left, M-right and ^W to do block movement or block erase.
 ///
@@ -2359,22 +2369,32 @@ enum move_word_dir_t { MOVE_DIR_LEFT, MOVE_DIR_RIGHT };
 /// \param erase Whether to erase the characters along the way or only move past them.
 /// \param newv if the new kill item should be appended to the previous kill item or not.
 void reader_data_t::move_word(editable_line_t *el, bool move_right, edit_operator_t op,
-                              enum move_word_style_t style, bool newv, bool nextword) {
+                              enum move_word_style_t style, bool newv,
+                              move_word_behavior_t behavior) {
     // Return if we are already at the edge.
     const size_t boundary = move_right ? el->size() : 0;
     if (el->position() == boundary) return;
 
     // When moving left, a value of 1 means the character at index 0.
-    move_word_state_machine_t state(style, nextword);
+    bool trailing = behavior == move_word_behavior_t::next;
+    move_word_state_machine_t state(style, trailing);
     const wchar_t *const command_line = el->text().c_str();
     const size_t start_buff_pos = el->position();
 
+    bool went_past = false;
     size_t buff_pos = el->position();
     while (buff_pos != boundary) {
         size_t idx = (move_right ? buff_pos : buff_pos - 1);
         wchar_t c = command_line[idx];
-        if (!state.consume_char(c)) break;
+        if (!state.consume_char(c)) {
+            went_past = true;
+            break;
+        };
         buff_pos = (move_right ? buff_pos + 1 : buff_pos - 1);
+    }
+
+    if (behavior == move_word_behavior_t::end && went_past) {
+        buff_pos = (move_right ? buff_pos - 1 : buff_pos + 1);
     }
 
     // Always consume at least one character.
@@ -2931,6 +2951,93 @@ static edit_operator_t operator_from_cmd(readline_cmd_t c) {
     }
 }
 
+struct word_motion_t {
+    /// Whether to move forward (vs. backward)
+    move_word_dir_t dir;
+    /// Whether punctuation characters are part of words
+    move_word_style_t style;
+    /// Whether to move to the end of the word, to the next word,
+    /// or one past the end of the word
+    move_word_behavior_t behavior;
+};
+
+static word_motion_t motion_from_command(readline_cmd_t c) {
+    using rl = readline_cmd_t;
+    using sty = move_word_style_t;
+    using bhv = move_word_behavior_t;
+    bool forward;
+    sty style;
+    bhv behavior;
+
+    switch (c) {
+    case rl::backward_word:
+        forward = false;
+        style = sty::move_word_style_punctuation;
+        behavior = bhv::past_end;
+        break;
+    case rl::backward_bigword: 
+        forward = false;
+        style = sty::move_word_style_whitespace;
+        behavior = bhv::past_end;
+        break;
+    case rl::backward_nextword:
+        forward = false;
+        style = sty::move_word_style_punctuation;
+        behavior = bhv::next;
+        break;
+    case rl::backward_bignextword:
+        forward = false;
+        style = sty::move_word_style_whitespace;
+        behavior = bhv::next;
+        break;
+    case rl::backward_endword:
+        forward = false;
+        style = sty::move_word_style_punctuation;
+        behavior = bhv::end;
+        break;
+    case rl::backward_bigendword:
+        forward = false;
+        style = sty::move_word_style_whitespace;
+        behavior = bhv::end;
+        break;
+    case rl::forward_word:
+        forward = true;
+        style = sty::move_word_style_punctuation;
+        behavior = bhv::past_end;
+        break;
+    case rl::forward_bigword:
+        forward = true;
+        style = sty::move_word_style_whitespace;
+        behavior = bhv::past_end;
+        break;
+    case rl::forward_nextword:
+        forward = true;
+        style = sty::move_word_style_punctuation;
+        behavior = bhv::next;
+        break;
+    case rl::forward_bignextword:
+        forward = true;
+        style = sty::move_word_style_whitespace;
+        behavior = bhv::next;
+        break;
+    case rl::forward_endword:
+        forward = true;
+        style = sty::move_word_style_punctuation;
+        behavior = bhv::end;
+        break;
+    case rl::forward_bigendword:
+        forward = true;
+        style = sty::move_word_style_whitespace;
+        behavior = bhv::end;
+        break;
+    default:
+        assert(false && "Not a word motion command");
+    }
+
+    return word_motion_t {.dir = forward ? MOVE_DIR_RIGHT : MOVE_DIR_LEFT,
+        .style = style, .behavior = behavior};
+}
+
 /// Handle a readline command \p c, updating the state \p rls.
 void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_state_t &rls) {
     const auto &vars = this->vars();
@@ -2951,10 +3058,10 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
         if (non_blank) {
             switch (c) {
             case rl::forward_nextword:
-                c = rl::forward_word;
+                c = rl::forward_endword;
                 break;
             case rl::forward_bignextword:
-                c = rl::forward_bigword;
+                c = rl::forward_bigendword;
                 break;
             default:
                 break;
@@ -3494,7 +3601,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             bool newv = (rls.last_cmd != rl::backward_kill_word &&
                          rls.last_cmd != rl::backward_kill_path_component &&
                          rls.last_cmd != rl::backward_kill_bigword);
-            move_word(active_edit_line(), MOVE_DIR_LEFT, edit_operator_t::kill, style, newv, false);
+            move_word(active_edit_line(), MOVE_DIR_LEFT, edit_operator_t::kill, style, newv, move_word_behavior_t::past_end);
             break;
         }
         case rl::kill_word:
@@ -3504,38 +3611,31 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             auto move_style =
                 (c == rl::kill_word) ? move_word_style_punctuation : move_word_style_whitespace;
             move_word(active_edit_line(), MOVE_DIR_RIGHT, edit_operator_t::kill, move_style,
-                      rls.last_cmd != c /* same kill item if same movement */, false);
+                      rls.last_cmd != c /* same kill item if same movement */, move_word_behavior_t::past_end);
             break;
         }
         case rl::backward_word:
         case rl::backward_bigword: 
         case rl::backward_nextword:
-        case rl::backward_bignextword: {
-            auto move_style =
-                (c == rl::backward_word || c == rl::backward_nextword)
-                    ? move_word_style_punctuation : move_word_style_whitespace;
-            bool nextword = (c == rl::backward_nextword || c == rl::backward_bignextword);
-            for (unsigned i = 0; i < count; ++i) {
-                move_word(active_edit_line(), MOVE_DIR_LEFT, edit_op, move_style,
-                          i == 0, nextword);
-            }
-            reset();
-            break;
-        }
+        case rl::backward_bignextword:
+        case rl::backward_endword:
+        case rl::backward_bigendword:
         case rl::forward_word:
         case rl::forward_bigword:
         case rl::forward_nextword:
-        case rl::forward_bignextword: {
-            auto move_style =
-                (c == rl::forward_word) ? move_word_style_punctuation : move_word_style_whitespace;
-            bool nextword = (c == rl::forward_nextword || c == rl::forward_bignextword);
+        case rl::forward_bignextword:
+        case rl::forward_endword:
+        case rl::forward_bigendword: {
+            word_motion_t motion = motion_from_command(c);
+
             editable_line_t *el = active_edit_line();
-            if (el->position() < el->size()) {
+            if (motion.dir == MOVE_DIR_LEFT || el->position() < el->size()) {
                 for (unsigned i = 0; i < count; ++i) {
-                    move_word(el, MOVE_DIR_RIGHT, edit_op, move_style, i == 0, nextword);
+                    move_word(el, motion.dir, edit_op, motion.style,
+                              i == 0, motion.behavior);
                 }
-            } else {
-                accept_autosuggestion(false, false, move_style); // [BTV] todo - think about how nextword affects this
+            } else if (motion.dir == MOVE_DIR_RIGHT) {
+                accept_autosuggestion(false, false, motion.style);
             }
             reset();
             break;
@@ -3751,7 +3851,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             // We apply the operation from the current location to the end of the word.
             size_t pos = el->position();
             size_t init_pos = pos;
-            move_word(el, MOVE_DIR_RIGHT, edit_operator_t::none, move_word_style_punctuation, false, false);
+            move_word(el, MOVE_DIR_RIGHT, edit_operator_t::none, move_word_style_punctuation, false, move_word_behavior_t::past_end);
             wcstring replacement;
             for (; pos < el->position(); pos++) {
                 wchar_t chr = el->text().at(pos);

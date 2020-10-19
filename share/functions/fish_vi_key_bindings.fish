@@ -107,14 +107,14 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
 
     bind -s --preset k up-or-search
     bind -s --preset j down-or-search
-    bind -s --preset b backward-word
-    bind -s --preset B backward-bigword
-    bind -s --preset ge backward-word
-    bind -s --preset gE backward-bigword
+    bind -s --preset b backward-nextword
+    bind -s --preset B backward-bignextword
+    bind -s --preset ge backward-endword
+    bind -s --preset gE backward-bigendword
     bind -s --preset w forward-nextword
     bind -s --preset W forward-bignextword
-    bind -s --preset e forward-word
-    bind -s --preset E forward-bigword
+    bind -s --preset e forward-endword
+    bind -s --preset E forward-bigendword
 
     # OS X SnowLeopard doesn't have these keys. Don't show an annoying error message.
     # Vi/Vim doesn't support these keys in insert mode but that seems silly so we do so anyway.
@@ -195,14 +195,14 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -M visual k up-line
     bind -s --preset -M visual j down-line
 
-    bind -s --preset -M visual b backward-word
-    bind -s --preset -M visual B backward-bigword
-    bind -s --preset -M visual ge backward-word
-    bind -s --preset -M visual gE backward-bigword
-    bind -s --preset -M visual w forward-word
-    bind -s --preset -M visual W forward-bigword
-    bind -s --preset -M visual e forward-word
-    bind -s --preset -M visual E forward-bigword
+    bind -s --preset -M visual b backward-endword
+    bind -s --preset -M visual B backward-bigendword
+    bind -s --preset -M visual ge backward-nextword
+    bind -s --preset -M visual gE backward-bignextword
+    bind -s --preset -M visual w forward-nextword
+    bind -s --preset -M visual W forward-bignextword
+    bind -s --preset -M visual e forward-endword
+    bind -s --preset -M visual E forward-bigendword
     bind -s --preset -M visual o swap-selection-start-stop repaint-mode
 
     bind -s --preset -M visual f forward-jump
