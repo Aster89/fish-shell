@@ -699,7 +699,7 @@ class reader_data_t : public std::enable_shared_from_this<reader_data_t> {
 
     void update_buff_pos(editable_line_t *el, maybe_t<size_t> new_pos = none_t());
 
-    void apply_op(edit_operator_t op, editable_line_t *el, size_t start, size_t end, int kill_mode, bool kill_newv);
+    void apply_op(edit_operator_t op, editable_line_t *el, size_t start, size_t end, int kill_mode, bool kill_newv, bool inclusive);
     void apply_op_to_lines(edit_operator_t op, editable_line_t *el, unsigned lines, int kill_mode, bool kill_newv);
     void copy(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv);
     void kill(editable_line_t *el, size_t begin_idx, size_t length, int mode, int newv);
@@ -2295,7 +2295,7 @@ void reader_data_t::update_command_line_from_history_search() {
 }
 
 void reader_data_t::apply_op(edit_operator_t op, editable_line_t *el, size_t start, size_t end,
-                             int kill_mode, bool kill_newv) {
+                             int kill_mode, bool kill_newv, bool inclusive) {
     size_t left, right;
     if (start <= end) {
         left = start;
@@ -2304,6 +2304,7 @@ void reader_data_t::apply_op(edit_operator_t op, editable_line_t *el, size_t sta
         left = end;
         right = start;
     }
+    size_t action_size = right - left + ((right < el->size() && inclusive) ? 1 : 0);
     using eo = edit_operator_t;
     switch (op) {
     case eo::none:
@@ -2315,13 +2316,13 @@ void reader_data_t::apply_op(edit_operator_t op, editable_line_t *el, size_t sta
             suppress_autosuggestion = true;
         }
 
-        kill(el, left, right - left, kill_mode, kill_newv);
+        kill(el, left, action_size, kill_mode, kill_newv);
         break;
     case eo::copy:
-        copy(el, left, right - left, kill_mode, kill_newv);
+        copy(el, left, action_size, kill_mode, kill_newv);
         break;
     case eo::change:
-        kill(el, left, right - left, kill_mode, kill_newv);
+        kill(el, left, action_size, kill_mode, kill_newv);
         // see note on the definition of edit_operator_t::change
         vars().set_one(FISH_BIND_MODE_VAR, ENV_GLOBAL, L"insert");
         break;
@@ -2357,7 +2358,7 @@ void reader_data_t::apply_op_to_lines(edit_operator_t op, editable_line_t *el, u
     }
     assert(end >= begin);
 
-    apply_op(op, el, begin, end, kill_mode, kill_newv);
+    apply_op(op, el, begin, end, kill_mode, kill_newv, false);
 }
 enum move_word_dir_t { MOVE_DIR_LEFT, MOVE_DIR_RIGHT };
 
@@ -2377,6 +2378,7 @@ void reader_data_t::move_word(editable_line_t *el, bool move_right, edit_operato
 
     // When moving left, a value of 1 means the character at index 0.
     bool trailing = behavior == move_word_behavior_t::next;
+    bool inclusive = behavior == move_word_behavior_t::end;
     move_word_state_machine_t state(style, trailing);
     const wchar_t *const command_line = el->text().c_str();
     const size_t start_buff_pos = el->position();
@@ -2403,9 +2405,9 @@ void reader_data_t::move_word(editable_line_t *el, bool move_right, edit_operato
     // If we are moving left, buff_pos-1 is the index of the first character we do not delete
     // (possibly -1). If we are moving right, then buff_pos is that index - possibly el->size().
     if (move_right) {
-        apply_op(op, el, start_buff_pos, buff_pos, KILL_APPEND, newv);
+        apply_op(op, el, start_buff_pos, buff_pos, KILL_APPEND, newv, inclusive);
     } else {
-        apply_op(op, el, buff_pos, start_buff_pos, KILL_PREPEND, newv);
+        apply_op(op, el, buff_pos, start_buff_pos, KILL_PREPEND, newv, inclusive);
     }
 }
 
@@ -3080,7 +3082,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
             while (end > 0 && el->text().at(end - 1) != L'\n') {
                 --end;
             }
-            apply_op(edit_op, el, start, end, 0 /* irrelevant */, true);
+            apply_op(edit_op, el, start, end, 0 /* irrelevant */, true, false);
             reset();
             break;
         }
@@ -3125,7 +3127,7 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
                         ++end;
                     }
                 }
-                apply_op(edit_op, el, start, end, 0 /* irrelevant */, true);
+                apply_op(edit_op, el, start, end, 0 /* irrelevant */, true, false);
             } else {
                 accept_autosuggestion(true);
             }
@@ -4260,7 +4262,7 @@ bool reader_data_t::jump(jump_direction_t dir, jump_precision_t precision, edita
     }
 
     if (success) {
-        apply_op(op, el, start, end, kill_mode, kill_newv);
+        apply_op(op, el, start, end, kill_mode, kill_newv, true);
     }
     return success;
 }
