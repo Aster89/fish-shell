@@ -525,7 +525,9 @@ enum class edit_operator_t {
     /// Downcase the text
     downcase,
     /// Upcase the text
-    upcase
+    upcase,
+    /// Swap case
+    swapcase
 };
 
 enum class move_word_behavior_t {
@@ -2328,7 +2330,36 @@ void reader_data_t::apply_op(edit_operator_t op, editable_line_t *el, size_t sta
         break;
     case eo::upcase:
     case eo::downcase:
-        abort(); // [BTV] todo
+    case eo::swapcase: {
+        wcstring replacement;
+        for (size_t pos = left; pos < right; ++pos) {
+            wchar_t chr = el->text().at(pos);
+
+            bool make_uppercase;
+            switch (op) {
+            case eo::upcase:
+                make_uppercase = true;
+                break;
+            case eo::downcase:
+                make_uppercase = false;
+                break;
+            case eo::swapcase:
+                make_uppercase = !iswupper(chr);
+                break;
+            default:
+                assert(false && "unexpected case edit operator");
+            }
+
+            // Apply the operation and then record what we did.
+            if (make_uppercase)
+                chr = towupper(chr);
+            else
+                chr = towlower(chr);
+
+            replacement.push_back(chr);
+        }
+        replace_substring(el, left, right, std::move(replacement));
+    }
     }
 }
 
@@ -2948,6 +2979,8 @@ static edit_operator_t operator_from_cmd(readline_cmd_t c) {
         return eo::downcase;
     case rl::set_operator_upcase:
         return eo::upcase;
+    case rl::set_operator_swapcase:
+        return eo::swapcase;
     default:
         assert(false && "command should be an clear_operator or set_operator_*");
     }
@@ -3094,14 +3127,16 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
                 size_t start = el->position();
                 size_t end = start;
 
-                // The last newline must be skipped when both:
+                // The last newline must be skipped when all of the following are true:
+                //  * $ is what posix calls a "motion command"; in our terminology,
+                //    this means that the current edit operator is not "none".
                 //  * count > 1, AND
                 //  * The starting character is at or before
                 //    the first non-blank character of the line.
                 // This may sound finicky/complicated,
                 // but POSIX, Vim, and Nvi all agree on it .
                 bool skip_last_newline = false;
-                if (count > 1) {
+                if (edit_op != edit_operator_t::none && count > 1) {
                     skip_last_newline = true;
                     size_t tmp = start;
                     while (tmp > 0 && buff[tmp - 1] != L'\n') {
@@ -4019,7 +4054,8 @@ void reader_data_t::handle_readline_command(readline_cmd_t c, readline_loop_stat
         case rl::set_operator_copy:
         case rl::set_operator_change:
         case rl::set_operator_downcase:
-        case rl::set_operator_upcase: {
+        case rl::set_operator_upcase:
+        case rl::set_operator_swapcase: {
             set_edit_op(operator_from_cmd(c));
             break;
         }

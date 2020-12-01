@@ -146,8 +146,9 @@ function fish_vi_key_bindings --description 'vi-like key bindings for fish'
     bind -s --preset -m insert C kill-line repaint-mode
 
     bind -s --preset '~' togglecase-char forward-single-char
-    bind -s --preset gu downcase-word
-    bind -s --preset gU upcase-word
+    bind -s --preset 'g~' set-operator-swapcase repaint-mode
+    bind -s --preset gu set-operator-downcase repaint-mode
+    bind -s --preset gU set-operator-upcase repaint-mode
 
     bind -s --preset J end-of-line delete-char
     bind -s --preset K 'man (commandline -t) 2>/dev/null; or echo -n \a'

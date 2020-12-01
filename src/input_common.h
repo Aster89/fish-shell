@@ -93,6 +93,7 @@ enum class readline_cmd_t {
     set_operator_change,
     set_operator_downcase,
     set_operator_upcase,
+    set_operator_swapcase,
     // NOTE: This one has to be last.
     reverse_repeat_jump
 };
